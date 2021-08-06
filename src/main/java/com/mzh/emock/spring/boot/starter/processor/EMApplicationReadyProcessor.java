@@ -1,5 +1,6 @@
 package com.mzh.emock.spring.boot.starter.processor;
 
+import com.mzh.emock.core.context.EMContext;
 import com.mzh.emock.core.log.Logger;
 import com.mzh.emock.spring.boot.starter.EMConfigurationProperties;
 import com.mzh.emock.spring.boot.starter.context.EMSpringArgContext;
@@ -14,7 +15,7 @@ import java.time.temporal.ChronoUnit;
 
 public class EMApplicationReadyProcessor extends EMAbstractProcessor implements ApplicationListener<ApplicationReadyEvent>, Ordered {
     private static final Logger logger= Logger.get(EMApplicationReadyProcessor.class);
-    public EMApplicationReadyProcessor(AbstractApplicationContext context, ResourceLoader resourceLoader){
+    public EMApplicationReadyProcessor(EMSpringArgContext context, ResourceLoader resourceLoader){
         super(context, resourceLoader);
         logger.info("Effective Processor: EMApplicationReadyProcessor,context:"+context.toString()+",resourceLoader:"+resourceLoader.toString());
     }
@@ -42,11 +43,10 @@ public class EMApplicationReadyProcessor extends EMAbstractProcessor implements 
         try {
             LocalDateTime initStart= LocalDateTime.now();
             logger.info("emock : init processor start , time:"+initStart);
-            EMSpringArgContext.preparePublicContext(this.context);
-            EMSpringArgContext.getCurrContext().loadDefinition(resourceLoader);
-            EMSpringArgContext.getCurrContext().createWrapper();
-            EMSpringArgContext.getCurrContext().createEMBeanIfNecessary();
-            EMSpringArgContext.getCurrContext().proxyAndInject();
+            this.context.loadDefinition(resourceLoader);
+            this.context.createAllWrapper();
+            this.context.createEMBeanIfNecessary();
+            this.context.proxyAndInject();
             LocalDateTime initEnd=LocalDateTime.now();
             logger.info("emock : init processor complete, time: "+ initEnd
                     +", cost : "+initStart.until(initEnd,ChronoUnit.MILLIS)/1000.00+"s");
