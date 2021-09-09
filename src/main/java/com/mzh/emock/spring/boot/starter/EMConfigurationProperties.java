@@ -23,6 +23,7 @@ public class EMConfigurationProperties {
     public static long WAIT_FOR_APPLICATION_READY=5*60*1000L;
     public static final  List<String> ENABLED_PROFILES= Collections.synchronizedList(new ArrayList<String>(){{add("test");add("dev");}});
     public static final List<String> SCAN_PACKAGE=Collections.synchronizedList(new ArrayList<>());
+    public static final List<String> DYNAMIC_MOCKS=Collections.synchronizedList(new ArrayList<>());
 
 
     public void setEnabledProfiles(@NonNull List<String> profiles){
@@ -33,6 +34,11 @@ public class EMConfigurationProperties {
     public void setScanPackage(@NonNull List<String> packages){
         SCAN_PACKAGE.clear();
         SCAN_PACKAGE.addAll(packages);
+    }
+
+    public void setDynamicMocks(@NonNull List<String> interfaceNames){
+        DYNAMIC_MOCKS.clear();
+        DYNAMIC_MOCKS.addAll(interfaceNames);
     }
 
     public void setWaitTime(long waitTime){

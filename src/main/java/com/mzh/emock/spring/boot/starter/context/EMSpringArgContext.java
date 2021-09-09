@@ -1,9 +1,12 @@
 package com.mzh.emock.spring.boot.starter.context;
 
+import com.mzh.emock.core.compiler.EMMemoryClassLoader;
+import com.mzh.emock.core.compiler.EMRTCompiler;
+import com.mzh.emock.core.compiler.result.EMCompilerResult;
 import com.mzh.emock.core.context.EMAbstractContext;
+import com.mzh.emock.core.exception.EMDefinitionException;
 import com.mzh.emock.core.log.Logger;
 import com.mzh.emock.core.support.EMProxySupport;
-import com.mzh.emock.core.type.object.definition.EMDefinition;
 import com.mzh.emock.core.type.object.field.EMFieldInfo;
 import com.mzh.emock.core.type.proxy.EMProxyHolder;
 import com.mzh.emock.core.util.EMClassUtil;
@@ -42,12 +45,55 @@ public class EMSpringArgContext extends EMAbstractContext{
             return;
         }
     }
-
+    //support simple definition
     public void loadDefinition(ResourceLoader resourceLoader)throws Exception{
-        if (context == null || resourceLoader == null) {
+        if(context==null){
             return;
         }
         this.clearDefinition();
+        this.loadDefinitionFromPath(resourceLoader);
+        this.loadDefinitionFromParameter();
+    }
+    private void loadDefinitionFromParameter()throws Exception{
+        List<String> dynamicMocks=EMConfigurationProperties.DYNAMIC_MOCKS;
+        if(dynamicMocks.size()>1000){
+            throw new EMDefinitionException("dynamic mocks must less then 1000");
+        }
+        List<Class<?>> cNames=new ArrayList<>();
+        ClassLoader loader=this.getClass().getClassLoader();
+        for (String dynamicMock : dynamicMocks) {
+            Class<?> clz = loader.loadClass(dynamicMock);
+            cNames.add(clz);
+        }
+        //使用编译器直接编译字符串类,或者使用asm生成
+        //直接采用生成类文件的方式【同项目中已有的方式一致】
+        String importStr="package com.mzh.emock.instance.dynamic;\r\n"+
+                "import com.mzh.emock.core.type.EMock;\r\n"+
+                "import com.mzh.emock.core.type.object.EMObjectWrapper;\r\n"+
+                "import org.springframework.context.ApplicationContext;\r\n"+
+                "import java.util.function.Supplier;\r\n";
+        StringBuilder body=new StringBuilder("public class EMDynamicInstance{\r\n");
+        for(Class<?> c:cNames){
+            body.append("@EMock(name=\"").append(c.getName().replace(".", "-")).append("\",order=1,objectEnableMock=false)\r\n");
+            body.append("public static EMObjectWrapper<").append(c.getName()).append("> ").append(c.getName().replace(".","_"))
+                    .append("(Supplier<ApplicationContext> args){\r\n").append("return api->api;\r\n}\r\n");
+        }
+        body.append("}");
+        String code=importStr+body;
+        String clzName="com.mzh.emock.instance.dynamic.EMDynamicInstance";
+        EMCompilerResult result=EMRTCompiler.compile("EMDynamicInstance.java",code);
+        if(result.isSuccess()){
+            Class<?> clz=EMMemoryClassLoader.loadFromBytes(clzName,result.getResult());
+            super.loadDefinition(clz,m->true);
+        }else{
+            throw result.getException();
+        }
+        logger.info("emock : load definitionSource complete : "+this.getDefinitionKeys().size());
+    }
+    private void loadDefinitionFromPath(ResourceLoader resourceLoader)throws Exception{
+        if (resourceLoader == null) {
+            return;
+        }
         ClassLoader loader=EMSpringArgContext.class.getClassLoader();
         String[] matchers=loadEMNameMatcher(context);
         ResourcePatternResolver resolver = ResourcePatternUtils.getResourcePatternResolver(resourceLoader);
@@ -58,15 +104,15 @@ public class EMSpringArgContext extends EMAbstractContext{
             for (Resource resource : resources) {
                 MetadataReader reader = readerFactory.getMetadataReader(resource);
                 Class<?> clz = loader.loadClass(reader.getClassMetadata().getClassName());
-                loadDefinition(clz, method -> {
+                super.loadDefinition(clz, method -> {
                     String typeName=EMClassUtil.getParameterizedTypeClass(method.getGenericReturnType()).get(0).getTypeName();
                     Class<?> paramType=EMClassUtil.getParameterizedTypeClass(method.getGenericParameterTypes()[0]).get(0);
                     return PatternMatchUtils.simpleMatch(matchers,typeName) && EMClassUtil.isSuperClass(paramType,AbstractApplicationContext.class);
                 });
             }
         }
-        logger.info("emock : load definitionSource complete : "+this.getDefinitionKeys().size());
     }
+
 
     public void createAllWrapper()throws Exception{
         this.createWrapper(d -> EMClassUtil.isSuperClass(d.getAClass(),this.context.getClass()), () -> this.context);
@@ -120,11 +166,15 @@ public class EMSpringArgContext extends EMAbstractContext{
         }
         if(info.isArrayIndex()){
             if(((Object[])holder)[info.getIndex()]!=target){
-                logger.error("array object index changed "+",obj:"+holder);
+                logger.error("array object index changed ,obj:"+holder);
                 return;
             }
         }
         Class<? super T> bestMatched=findBestMatchClz(target,(Class<? super T>)fieldType);
+        if(bestMatched==null){
+            logger.error("field set error,target:"+target.getClass()+",fieldType:"+fieldType.getName());
+            return ;
+        }
         EMProxyHolder<? super T> proxyHolder = getProxySupport().createProxy(bestMatched, target);
         proxyHolder.addInjectField(info);
         if(info.isArrayIndex()){
@@ -136,16 +186,17 @@ public class EMSpringArgContext extends EMAbstractContext{
     }
 
 
+    //更新bestmatch注入逻辑，添加子类注入逻辑
     private <T> Class<? super T> findBestMatchClz(T oldBean,Class<? super T> fieldClz){
         List<Class<? super T>> tClzList = this.getObjectGroup(oldBean).getMockClass();
         Class<? super T> bestMatch=null;
         for(Class<? super T> tClz:tClzList){
             if(EMClassUtil.isSubClass(tClz,fieldClz)){
-                if(fieldClz==tClz){
-                    return fieldClz;
-                }
                 if(bestMatch==null){
                     bestMatch=tClz;
+                }
+                if(fieldClz==tClz){
+                    return fieldClz;
                 }
                 if(EMClassUtil.isSubClass(tClz,bestMatch)){
                     bestMatch=tClz;
