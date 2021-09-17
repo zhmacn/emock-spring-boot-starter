@@ -172,7 +172,7 @@ public class EMSpringArgContext extends EMAbstractContext{
         }
         Class<? super T> bestMatched=findBestMatchClz(target,(Class<? super T>)fieldType);
         if(bestMatched==null){
-            logger.error("field set error,target:"+target.getClass()+",fieldType:"+fieldType.getName());
+            logger.error("field set error,no matched proxy,target:"+target.getClass()+",fieldType:"+fieldType.getName());
             return ;
         }
         EMProxyHolder<? super T> proxyHolder = getProxySupport().createProxy(bestMatched, target);
